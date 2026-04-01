@@ -1,0 +1,15 @@
+version: '3.8'
+services:
+  outpost:
+    build: .
+    ports:
+      - "9220:9220"
+    environment:
+      - PORT=9220
+      - DATA_DIR=/data
+      - OUTPOST_LICENSE_KEY=
+    volumes:
+      - outpost_data:/data
+    restart: unless-stopped
+volumes:
+  outpost_data:
