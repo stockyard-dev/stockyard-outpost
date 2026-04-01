@@ -1,63 +1,16 @@
 package store
-
-import (
-	"database/sql"
-	"fmt"
-	"os"
-	"path/filepath"
-
-	_ "modernc.org/sqlite"
-)
-
-type DB struct {
-	*sql.DB
-}
-
-func Open(dataDir string) (*DB, error) {
-	if err := os.MkdirAll(dataDir, 0755); err != nil {
-		return nil, fmt.Errorf("mkdir: %w", err)
-	}
-	dsn := filepath.Join(dataDir, "outpost.db") + "?_journal_mode=WAL&_busy_timeout=5000"
-	db, err := sql.Open("sqlite", dsn)
-	if err != nil {
-		return nil, fmt.Errorf("open: %w", err)
-	}
-	db.SetMaxOpenConns(1)
-	if err := migrate(db); err != nil {
-		return nil, fmt.Errorf("migrate: %w", err)
-	}
-	return &DB{db}, nil
-}
-
-func migrate(db *sql.DB) error {
-	_, err := db.Exec(`CREATE TABLE IF NOT EXISTS widgets (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        type TEXT NOT NULL,
-        title TEXT,
-        config TEXT,
-        position INTEGER DEFAULT 0,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-     );
-     CREATE TABLE IF NOT EXISTS habits (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        description TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-     );
-     CREATE TABLE IF NOT EXISTS habit_completions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        habit_id INTEGER NOT NULL,
-        completed_on TEXT NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-     );
-     CREATE TABLE IF NOT EXISTS feed_items (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        widget_id INTEGER NOT NULL,
-        title TEXT,
-        url TEXT,
-        published_at DATETIME,
-        read INTEGER DEFAULT 0,
-        fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP
-     );`)
-	return err
-}
+import("database/sql";"fmt";"os";"path/filepath";"time";_ "modernc.org/sqlite")
+type DB struct{*sql.DB}
+type Bookmark struct{ID int64 `json:"id"`;Title string `json:"title"`;URL string `json:"url"`;Category string `json:"category"`;Notes string `json:"notes"`;Pinned bool `json:"pinned"`;CreatedAt time.Time `json:"created_at"`}
+type Widget struct{ID int64 `json:"id"`;WidgetType string `json:"widget_type"`;Title string `json:"title"`;Config string `json:"config"`;Position int `json:"position"`;CreatedAt time.Time `json:"created_at"`}
+func Open(dataDir string)(*DB,error){if err:=os.MkdirAll(dataDir,0755);err!=nil{return nil,fmt.Errorf("mkdir: %w",err)};dsn:=filepath.Join(dataDir,"outpost.db")+"?_journal_mode=WAL&_busy_timeout=5000";db,err:=sql.Open("sqlite",dsn);if err!=nil{return nil,fmt.Errorf("open: %w",err)};db.SetMaxOpenConns(1);if err:=migrate(db);err!=nil{return nil,fmt.Errorf("migrate: %w",err)};return &DB{db},nil}
+func migrate(db *sql.DB)error{_,err:=db.Exec(`CREATE TABLE IF NOT EXISTS bookmarks(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT NOT NULL,url TEXT NOT NULL,category TEXT DEFAULT 'general',notes TEXT DEFAULT '',pinned INTEGER DEFAULT 0,created_at DATETIME DEFAULT CURRENT_TIMESTAMP);CREATE TABLE IF NOT EXISTS widgets(id INTEGER PRIMARY KEY AUTOINCREMENT,widget_type TEXT NOT NULL,title TEXT NOT NULL,config TEXT DEFAULT '{}',position INTEGER DEFAULT 0,created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`);return err}
+func(db *DB)ListBookmarks(category string)([]Bookmark,error){var rows *sql.Rows;var err error;if category!=""{rows,err=db.Query(`SELECT id,title,url,category,notes,pinned,created_at FROM bookmarks WHERE category=? ORDER BY pinned DESC,created_at DESC`,category)}else{rows,err=db.Query(`SELECT id,title,url,category,notes,pinned,created_at FROM bookmarks ORDER BY pinned DESC,category,created_at DESC`)};if err!=nil{return nil,err};defer rows.Close();var out[]Bookmark;for rows.Next(){var b Bookmark;var pinned int;rows.Scan(&b.ID,&b.Title,&b.URL,&b.Category,&b.Notes,&pinned,&b.CreatedAt);b.Pinned=pinned==1;out=append(out,b)};return out,nil}
+func(db *DB)CreateBookmark(b *Bookmark)error{var pinned int;if b.Pinned{pinned=1};res,err:=db.Exec(`INSERT INTO bookmarks(title,url,category,notes,pinned)VALUES(?,?,?,?,?)`,b.Title,b.URL,b.Category,b.Notes,pinned);if err!=nil{return err};b.ID,_=res.LastInsertId();return nil}
+func(db *DB)TogglePin(id int64)error{_,err:=db.Exec(`UPDATE bookmarks SET pinned=1-pinned WHERE id=?`,id);return err}
+func(db *DB)DeleteBookmark(id int64)error{_,err:=db.Exec(`DELETE FROM bookmarks WHERE id=?`,id);return err}
+func(db *DB)ListWidgets()([]Widget,error){rows,err:=db.Query(`SELECT id,widget_type,title,config,position,created_at FROM widgets ORDER BY position`);if err!=nil{return nil,err};defer rows.Close();var out[]Widget;for rows.Next(){var w Widget;rows.Scan(&w.ID,&w.WidgetType,&w.Title,&w.Config,&w.Position,&w.CreatedAt);out=append(out,w)};return out,nil}
+func(db *DB)CreateWidget(w *Widget)error{res,err:=db.Exec(`INSERT INTO widgets(widget_type,title,config,position)VALUES(?,?,?,?)`,w.WidgetType,w.Title,w.Config,w.Position);if err!=nil{return err};w.ID,_=res.LastInsertId();return nil}
+func(db *DB)DeleteWidget(id int64)error{_,err:=db.Exec(`DELETE FROM widgets WHERE id=?`,id);return err}
+func(db *DB)Categories()([]string,error){rows,err:=db.Query(`SELECT DISTINCT category FROM bookmarks ORDER BY category`);if err!=nil{return nil,err};defer rows.Close();var out[]string;for rows.Next(){var s string;rows.Scan(&s);out=append(out,s)};return out,nil}
+func(db *DB)CountBookmarks()(int,error){var n int;db.QueryRow(`SELECT COUNT(*) FROM bookmarks`).Scan(&n);return n,nil}
