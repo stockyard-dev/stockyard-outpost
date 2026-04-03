@@ -5,7 +5,9 @@ func New(db *store.DB,limits Limits)*Server{s:=&Server{db:db,mux:http.NewServeMu
 s.mux.HandleFunc("GET /api/hosts",s.list);s.mux.HandleFunc("POST /api/hosts",s.register);s.mux.HandleFunc("GET /api/hosts/{id}",s.get);s.mux.HandleFunc("DELETE /api/hosts/{id}",s.del)
 s.mux.HandleFunc("POST /api/report",s.report)
 s.mux.HandleFunc("GET /api/stats",s.stats);s.mux.HandleFunc("GET /api/health",s.health)
-s.mux.HandleFunc("GET /ui",s.dashboard);s.mux.HandleFunc("GET /ui/",s.dashboard);s.mux.HandleFunc("GET /",s.root);return s}
+s.mux.HandleFunc("GET /ui",s.dashboard);s.mux.HandleFunc("GET /ui/",s.dashboard);s.mux.HandleFunc("GET /",s.root);
+s.mux.HandleFunc("GET /api/tier",func(w http.ResponseWriter,r *http.Request){wj(w,200,map[string]any{"tier":s.limits.Tier,"upgrade_url":"https://stockyard.dev/outpost/"})})
+return s}
 func(s *Server)ServeHTTP(w http.ResponseWriter,r *http.Request){s.mux.ServeHTTP(w,r)}
 func wj(w http.ResponseWriter,c int,v any){w.Header().Set("Content-Type","application/json");w.WriteHeader(c);json.NewEncoder(w).Encode(v)}
 func we(w http.ResponseWriter,c int,m string){wj(w,c,map[string]string{"error":m})}
