@@ -87,10 +87,41 @@ body{background:var(--bg);color:var(--cream);font-family:var(--mono);line-height
 .empty{text-align:center;padding:3rem;color:var(--cm);font-style:italic;font-size:.85rem}
 .agent-help{margin-top:1rem;padding:1rem;background:var(--bg2);border:1px solid var(--bg3);font-size:.65rem;color:var(--cd)}
 .agent-help code{background:var(--bg);padding:.1rem .3rem;color:var(--gold)}
-@media(max-width:600px){.stats{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:600px){.stats{grid-template-columns:repeat(2,1fr)}.trial-bar{flex-direction:column;align-items:stretch}.trial-bar input.key-input{width:100%}}
+.trial-bar{display:none;background:linear-gradient(90deg,#3a2419,#2e1c14);border-bottom:2px solid var(--rust);padding:.7rem 1.5rem;font-family:var(--mono);font-size:.68rem;color:var(--cream);align-items:center;gap:1rem;flex-wrap:wrap}
+.trial-bar.show{display:flex}
+.trial-bar-msg{flex:1;min-width:240px;line-height:1.5}
+.trial-bar-msg strong{color:var(--rust);text-transform:uppercase;letter-spacing:1px;font-size:.6rem;display:block;margin-bottom:.15rem}
+.trial-bar-actions{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
+.trial-bar a.btn-trial{background:var(--rust);color:#fff;padding:.4rem .8rem;text-decoration:none;font-size:.65rem;text-transform:uppercase;letter-spacing:1px;font-weight:700;border:1px solid var(--rust);transition:all .2s}
+.trial-bar a.btn-trial:hover{background:#f08545;border-color:#f08545}
+.trial-bar-divider{color:var(--cm);font-size:.6rem}
+.trial-bar input.key-input{padding:.4rem .5rem;background:var(--bg);border:1px solid var(--bg3);color:var(--cream);font-family:var(--mono);font-size:.6rem;width:200px}
+.trial-bar input.key-input:focus{outline:none;border-color:var(--rust)}
+.trial-bar button.btn-activate{padding:.4rem .7rem;background:var(--bg2);color:var(--cream);border:1px solid var(--leather);font-family:var(--mono);font-size:.6rem;cursor:pointer;text-transform:uppercase;letter-spacing:1px}
+.trial-bar button.btn-activate:hover{background:var(--bg3)}
+.trial-bar button.btn-activate:disabled{opacity:.5;cursor:wait}
+.trial-msg{font-size:.6rem;color:var(--cm);margin-left:.5rem}
+.trial-msg.error{color:#e74c3c}
+.trial-msg.success{color:#4ade80}
+.btn-disabled-trial{opacity:.45;cursor:not-allowed!important}
 </style>
 </head>
 <body>
+
+<div class="trial-bar" id="trial-bar">
+<div class="trial-bar-msg">
+<strong>Trial Required</strong>
+You can view your registered hosts, but registering, editing, or removing is locked until you start a 14-day free trial.
+</div>
+<div class="trial-bar-actions">
+<a class="btn-trial" href="https://stockyard.dev/" target="_blank" rel="noopener">Start 14-Day Trial</a>
+<span class="trial-bar-divider">or</span>
+<input type="text" class="key-input" id="trial-key-input" placeholder="SY-..." autocomplete="off" spellcheck="false">
+<button class="btn-activate" id="trial-activate-btn" onclick="activateLicense()">Activate</button>
+<span class="trial-msg" id="trial-msg"></span>
+</div>
+</div>
 
 <div class="hdr">
 <h1 id="dash-title"><span>&#9670;</span> OUTPOST</h1>
@@ -233,7 +264,8 @@ return '<div class="metric"><span class="metric-label">'+label+'</span>'+
 
 function cardHTML(host){
 var status=host.status||'unknown';
-var h='<div class="card '+esc(status)+'" onclick="openEdit(\''+esc(host.id)+'\')">';
+var clickHandler=window._trialRequired?'showTrialNudge()':'openEdit(\\''+esc(host.id)+'\\')';
+var h='<div class="card '+esc(status)+'" onclick="'+clickHandler+'">';
 
 h+='<div class="card-top">';
 h+='<div style="flex:1;min-width:0">';
@@ -437,9 +469,102 @@ isCustom:true
 }
 }).catch(function(){
 }).finally(function(){
+checkTrialState();
 load();
 });
 })();
+
+// ─── trial-required license gating ───
+window._trialRequired=false;
+
+async function checkTrialState(){
+try{
+var resp=await fetch('/api/tier');
+if(!resp.ok)return;
+var data=await resp.json();
+window._trialRequired=!!data.trial_required;
+if(window._trialRequired){
+document.getElementById('trial-bar').classList.add('show');
+disableWriteControls();
+// Re-render so card onclick handlers pick up trial state
+if(typeof render==='function')render();
+}else{
+document.getElementById('trial-bar').classList.remove('show');
+}
+}catch(e){}
+}
+
+function disableWriteControls(){
+var buttons=document.querySelectorAll('.hdr .btn, .hdr .btn-p');
+buttons.forEach(function(b){
+var t=b.textContent||'';
+if(t.indexOf('Register')!==-1||t.indexOf('Add')!==-1||t.indexOf('New')!==-1){
+b.classList.add('btn-disabled-trial');
+b.title='Locked: trial required';
+b.onclick=function(e){
+e.preventDefault();
+showTrialNudge();
+return false;
+};
+}
+});
+}
+
+function showTrialNudge(){
+var input=document.getElementById('trial-key-input');
+if(input){
+input.focus();
+input.style.borderColor='var(--rust)';
+setTimeout(function(){if(input)input.style.borderColor=''},1500);
+}
+}
+
+async function activateLicense(){
+var input=document.getElementById('trial-key-input');
+var btn=document.getElementById('trial-activate-btn');
+var msg=document.getElementById('trial-msg');
+if(!input||!btn||!msg)return;
+var key=(input.value||'').trim();
+if(!key){
+msg.className='trial-msg error';
+msg.textContent='Paste your license key first';
+input.focus();
+return;
+}
+btn.disabled=true;
+msg.className='trial-msg';
+msg.textContent='Activating...';
+try{
+var resp=await fetch('/api/license/activate',{
+method:'POST',
+headers:{'Content-Type':'application/json'},
+body:JSON.stringify({license_key:key})
+});
+var data=await resp.json();
+if(!resp.ok){
+msg.className='trial-msg error';
+msg.textContent=data.error||'Activation failed';
+btn.disabled=false;
+return;
+}
+msg.className='trial-msg success';
+msg.textContent='Activated. Reloading...';
+setTimeout(function(){location.reload()},800);
+}catch(e){
+msg.className='trial-msg error';
+msg.textContent='Network error: '+e.message;
+btn.disabled=false;
+}
+}
+
+document.addEventListener('DOMContentLoaded',function(){
+var input=document.getElementById('trial-key-input');
+if(input){
+input.addEventListener('keydown',function(e){
+if(e.key==='Enter')activateLicense();
+});
+}
+});
 </script>
 </body>
 </html>`
